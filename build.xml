@@ -1,0 +1,22 @@
+<project name="Module Name" default="build">
+    <description>
+        Module Description
+    </description>
+
+    <property name="module.name" value="app"/>
+    <property name="module.dir" location="."/>
+    <property name="module.version" value="1.0"/>
+    <property name="module.files" value="**\*.jpg, **\*.png, **\*.gif, **\*.js, **\*.css"/>
+    <property name="module.exclude.files" value="data.json"/>
+    <property name="module.release.path" value="app/${module.version}"/>
+    <property name="spm.files" value="b.js"/>
+    
+    <!-- 通用任务 -->
+    <import file="D:\tools\common-build.xml"/>
+
+
+    <target name="build"
+            depends="common.build">
+    </target>
+
+</project>

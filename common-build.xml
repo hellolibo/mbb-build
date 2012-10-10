@@ -1,0 +1,324 @@
+<project name="common-build" xmlns:ac="antlib:net.sf.antcontrib">
+    <description>
+        Common Build File
+    </description>
+
+    <!-- 开发目录及开发者信息 -->
+    <property name="developer.dev.dir" location="D:\dev"/>
+    <property name="tools.dir" location="D:\tools"/>
+    <property name="developer.nickname" value="yourName"/>
+
+    <!-- 线上ftp信息,也可以是CDN的源地址 -->
+    <property name="cdn.ftp.server" value="192.168.0.1" />
+    <property name="cdn.ftp.port" value="21" />
+    <property name="cdn.ftp.userid" value="userID" />
+    <property name="cdn.ftp.password" value="userPW" />
+    <property name="cdn.ftp.dir" value="/static.yourdomain.com/static/${module.release.path}"/>
+    <property name="cdn.online.dir" value="http://static.yourdomain/static/${module.release.path}"/>
+
+    <!-- 环境域名定义 -->
+    <property name="path.test.domain" value="http://static.yourdomain.test" />
+    <property name="path.release.domain" value="http://static.yourdomain.com" />
+
+    <!-- 项目目录信息 -->
+    <property name="dist.dir" location="${module.dir}\..\dist"/>
+    <property name="demo.dir" location="${module.dir}\..\demo"/>
+    <property name="tmp.dir" location="${module.dir}\..\dist\tmp"/>
+    <property name="test.dir" location="${developer.dev.dir}\test\${module.release.path}"/>
+    <property name="release.dir" location="${developer.dev.dir}\release\${module.release.path}"/>
+
+    <!-- 工具地址 -->
+    <property name="csslint.js" location="${tools.dir}\csslint-node.js"/>
+    <property name="yc.jar" location="${tools.dir}\yuicompressor.jar"/>
+    <property name="jshint.jar" location="${tools.dir}\ant-jshint-0.3.1-deps.jar"/>
+
+    <!-- 其它 -->
+    <property name="charset" value="utf-8"/>
+    <property name="copyright.files" value="**\*.css, **\*.js"/>
+
+    <!-- SPM配置 -->
+    <property name="spm.app_url" location="${path.test.domain}/static/${module.release.path}"/>
+    <property name="spm.base_path" location="${developer.dev.dir}\libs"/>
+
+    <!-- jshint -->
+    <target name="jshint" description="Run the JSHint" >
+        
+        <taskdef 
+            name="jshint" 
+            classname="com.philmander.jshint.JsHintAntTask" 
+            classpath="${tools.dir}\ant-jshint-0.3.1-deps.jar" 
+            />
+
+        <property name="global" location="$:true,seajs:true,define:true,window:true,location:true"/>
+        <property name="hint.properties" location="${tools.dir}\hint.properties"/>
+
+        <jshint dir="${module.dir}" optionsFile="${hint.properties}" globals="${global}" fail="true">
+            <include name="**\*.js"/>
+            <exclude name=""/>
+        </jshint>
+
+    </target>
+
+    <!-- csslint - nodejs -->
+    <target name="csslint" description="Run the CSSLint">
+
+        <apply executable="cmd" verbose="true"  failonerror="true">
+            <fileset dir="${module.dir}" includes="**\*.css"/>
+            <arg value="/c"/>
+            <arg value="csslint"/>
+            <arg value="--rules=import"/>
+            <srcfile/>
+        </apply>
+
+    </target>
+
+    <!-- 移入tmp目录做接下来的处理 -->
+    <target name="prepare" >
+        <delete dir="${dist.dir}"/>
+        <mkdir dir="${tmp.dir}"/>
+        <copy todir="${tmp.dir}" overwrite="true">
+            <fileset dir="${module.dir}" includes="${module.files}" excludes="${module.exclude.files}"/>
+        </copy>
+
+        <!-- 版本号替换 -->
+        <replaceregexp match="%VERSION%"
+                       replace="${module.version}"
+                       flags="g"
+                       encoding="${charset}">
+            <fileset dir="${tmp.dir}">
+                <include name="**\*.js"/>
+                <include name="**\*.css"/>
+            </fileset>
+        </replaceregexp>
+
+        <!-- 保存 debug 版本 -->
+        <copy todir="${tmp.dir}">
+            <fileset dir="${tmp.dir}"/>
+            <mapper type="regexp"
+                  from="^(.+?)(?:-pkg)?\.(css|js)$"
+                  to="\1-debug.\2"/>
+        </copy>
+    </target>
+
+    <!-- SPM -->
+    <target name="spm">
+
+        <apply executable="cmd" verbose="true"  failonerror="true">
+            <fileset dir="${tmp.dir}" includes="${spm.files}"/>
+            <arg value="/c"/>
+            <arg value="spm"/>
+            <arg value="build"/>
+            <srcfile/>
+            <arg value="--${combine}"/>
+            <arg value="--app_url"/>
+            <arg value="${smp.app_url}"/>
+            <arg value="--base_path"/>
+            <arg value="${spm.base_path}"/>
+            <arg value="--out_path"/>
+            <arg value="${tmp.dir}"/>
+        </apply>
+
+        <!-- js中的中文转Unicode码 -->
+        <mkdir dir="${tmp.dir}/cn"/>
+        <move todir="${tmp.dir}/cn">
+            <fileset dir="${tmp.dir}" includes="**\*.js" excludes="**\*-debug.js"/>
+        </move>
+
+        <native2ascii  encoding="${charset}"
+                       src="${tmp.dir}/cn"
+                       dest="${tmp.dir}" />
+        <delete dir="${tmp.dir}/cn"/>
+
+    </target>
+
+    <!-- 压缩css -->
+    <target name="css.compress">
+
+        <!-- 用 YUICompressor 压缩 CSS -->
+        <apply executable="java" verbose="true" dest="${tmp.dir}" failonerror="true">
+            <fileset dir="${tmp.dir}" includes="**\*-debug.css"/>
+            <arg line="-jar"/>
+            <arg path="${yc.jar}"/>
+            <arg line="--type css"/>
+            <arg line="--charset ${charset}"/>
+            <arg line="--verbose"/>
+            <srcfile/>
+            <arg line="-o"/>
+            <targetfile />
+            <mapper type="regexp" from="^(.+?)(?:-debug)?\.css$" to="\1.css" />
+        </apply>
+
+        <!-- 这里的mapper是映射的意思，如果apply里使用了dest指定目录，一定要使用mapper来指定文件 -->
+
+    </target>
+
+    <!-- 扫尾工作 -->
+    <target name="destroy">
+        <move todir="${tmp.dir}\..\">
+            <fileset dir="${tmp.dir}" excludes="build.xml, *-pkg.css, *-pkg.js" />
+        </move>
+        <delete dir="${tmp.dir}"/>
+    </target>
+
+    <!-- 发布到本地测试目录 -->
+    <target name="pub.test">
+        <delete dir="${test.dir}"/>
+        <mkdir dir="${test.dir}"/>
+        <copy todir="${test.dir}">
+            <fileset dir="${dist.dir}" includes="${module.files}"/>
+        </copy>
+
+        <!-- 拷贝demo文件 -->
+        <ac:if>
+            <available type="dir" file="${demo.dir}" />
+            <ac:then>
+                <mkdir dir="${test.dir}\demo"/>
+                <copy todir="${test.dir}\demo">
+                    <fileset dir="${demo.dir}"/>
+                </copy>
+                <!-- 替换demo中引用发布文件的路径 -->
+                <ac:for param="file">
+                    <path>
+                        <fileset dir="${test.dir}\demo" includes="**\*.htm, **\*.html, **\*.js"/>
+                    </path>
+                    <sequential>
+                        <replace file="@{file}" encoding="${charset}">
+                            <replacefilter token="../src/" value="../"/>
+                        </replace>    
+                    </sequential>
+                </ac:for>
+            </ac:then>
+        </ac:if>
+
+        <!-- 加build时间 -->
+        <tstamp>
+            <format property="build.time" pattern="yyyy-MM-dd HH:mm" locale="cn"/>
+        </tstamp>
+        <mkdir dir="${test.dir}\cp"/>
+        <move todir="${test.dir}\cp">
+            <fileset dir="${test.dir}" includes="${copyright.files}"/>
+        </move>
+
+
+        <ac:for param="file">
+            <path>
+                <fileset dir="${test.dir}\cp" includes="${copyright.files}"/>
+            </path>
+
+            <sequential>
+                <concat destfile="@{file}.tmp" encoding="${charset}" outputencoding="${charset}">
+                    <header filtering="no" trimleading="yes">/* ${module.name} ${module.version} build ${build.time} by ${developer.nickname} */
+                    </header>
+                    <fileset file="@{file}"/>
+                </concat>
+
+                <move file="@{file}.tmp" tofile="@{file}"/>
+            </sequential>
+
+        </ac:for>
+
+        <move todir="${test.dir}">
+            <fileset dir="${test.dir}\cp" includes="${copyright.files}"/>
+        </move>
+        <delete dir="${test.dir}\cp"/>
+
+    </target>
+
+    <!-- 发布到本地预发布目录 -->
+    <target name="pub.release">
+        <delete dir="${release.dir}"/>
+        <mkdir dir="${release.dir}"/>
+        <copy todir="${release.dir}">
+            <fileset dir="${dist.dir}" includes="${module.files}">
+                <exclude name="demo\"/>
+                <exclude name="pub\"/>
+            </fileset>
+            <!-- 注意: 如果需要排除目录和这个目录下的文件要在目录名后面加"/" -->
+        </copy>
+        <!-- 把一些本地测试域名替换成线上域名 -->
+        <ac:for param="file">
+            <path>
+                <fileset dir="${release.dir}" includes="${module.files}"/>
+            </path>
+
+            <sequential>
+                <replace file="@{file}" encoding="${charset}">
+                    <replacefilter token="cca.mbaobao.test" value="cca.mbaobao.com" />
+                </replace>
+            </sequential>
+
+        </ac:for>
+    </target>
+
+    <!-- 准备发布到正式线上 -->
+    <target name="prepare.pub">
+        <tstamp>
+            <format property="pub.time" pattern="yyyy-MM-dd HH:mm" locale="cn"/>
+        </tstamp>
+        <mkdir dir="${release.dir}\pub"/>
+        <copy todir="${release.dir}\pub">
+            <fileset dir="${release.dir}" includes="${module.files}"/>
+        </copy>
+        <ac:for param="file">
+            <path>
+                <fileset dir="${release.dir}\pub" includes="${copyright.files}"/>
+            </path>
+            <sequential>
+                <concat destfile="@{file}.tmp" encoding="${charset}" outputencoding="${charset}">
+                    <header filtering="no" trimleading="yes">/* ${module.name} ${module.version} pub ${pub.time} by ${developer.nickname} */
+                    </header>
+                    <fileset file="@{file}"/>
+                </concat>
+
+                <move file="@{file}.tmp" tofile="@{file}"/>
+            </sequential>
+        </ac:for>   
+    </target>
+
+
+    <!-- 发布到正式线上的FTP -->
+    <target name="ftp">
+
+        <echo>----------------- FTP Info ----------------- </echo>
+        <echo>${cdn.ftp.dir}</echo>
+        <echo>${cdn.online.dir}</echo>
+        <echo>${online.dir}\pub</echo>
+
+        <ftp action="mkdir"
+             server="${cdn.ftp.server}"
+             port="${cdn.ftp.port}"
+             remotedir="${cdn.ftp.dir}"
+             userid="${cdn.ftp.userid}"
+             password="${cdn.ftp.password}">
+        </ftp>
+
+        <ftp action="send"
+             server="${cdn.ftp.server}"
+             port="${cdn.ftp.port}"
+             remotedir="${cdn.ftp.dir}"
+             userid="${cdn.ftp.userid}"
+             password="${cdn.ftp.password}">
+             <fileset dir="${online.dir}\pub" />
+        </ftp>
+
+        <delete dir="${online.dir}\pub" />
+
+    </target>
+
+    <target name="log">
+        <tstamp>
+            <format property="log.time.date" pattern="yyyy-MM-dd" locale="cn"/>
+            <format property="log.time" pattern="yyyy-MM-dd HH:mm" locale="cn"/>
+        </tstamp>
+        <echo file="${developer.dev.dir}/log/${log.time.date}.log" append="true">pub ${module.name} ${module.version} ${log.time}&#13;&#10;</echo>
+    </target>
+
+    <target name="common.build"
+          depends="jshint, csslint, prepare, spm, css.compress, destroy, pub.test, pub.release">
+    </target>
+
+    <target name="pub"
+            depends="prepare.pub, log, ftp">
+    </target>
+
+</project>
